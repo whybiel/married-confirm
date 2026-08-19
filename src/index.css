@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Jost:wght@400;500;600;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --color-bg: #FAF8F4;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #F3EEE5;
+  --color-navy: #16223E;
+  --color-navy-hover: #1F3159;
+  --color-slate: #5B6B85;
+  --color-champagne: #C9A876;
+  --color-champagne-soft: #EBE0CB;
+  --color-ink: #1E2433;
+  --color-muted: #6B7280;
+  --color-sage: #6F8F6B;
+  --color-sage-light: #EAF0E6;
+  --color-terra: #B5564A;
+  --color-terra-light: #F5E9E7;
+  --color-line: #E4DFD5;
+
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-ui: 'Jost', system-ui, sans-serif;
+}
+
+body {
+  font-family: 'Jost', system-ui, sans-serif;
+  background-color: #FAF8F4;
+  color: #1E2433;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes check-draw {
+  from { stroke-dashoffset: 20; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.4s ease forwards;
+}
+
+.animate-skeleton {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.check-path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  animation: check-draw 150ms ease forwards;
+}

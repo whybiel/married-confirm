@@ -1,0 +1,10 @@
+{
+  "description": "Create visually appealing designs using Markdown specifications, enabling users to easily generate and customize content for web and print.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
