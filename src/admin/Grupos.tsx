@@ -1,4 +1,5 @@
 import { Guest, GroupDef, formatLastAccess } from '@/data/mock'
+import { compareNaturally } from '@/utils/compareNaturally'
 
 interface GruposProps {
   guests: Guest[]
@@ -8,14 +9,16 @@ interface GruposProps {
 }
 
 export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }: GruposProps) {
-  const groupStats = groups.map((g) => {
-    const members = guests.filter((guest) => g.guestIds.includes(guest.id))
-    const confirmed = members.filter((m) => m.confirmed).length
-    const pending = members.filter((m) => !m.confirmed).length
-    const lastAccesses = members.map((m) => m.lastAccess).filter(Boolean) as string[]
-    const lastAccess = lastAccesses.length > 0 ? lastAccesses.sort().at(-1)! : null
-    return { ...g, members: members.length, confirmed, pending, lastAccess }
-  })
+  const groupStats = groups
+    .map((g) => {
+      const members = guests.filter((guest) => g.guestIds.includes(guest.id))
+      const confirmed = members.filter((m) => m.confirmed).length
+      const pending = members.filter((m) => !m.confirmed).length
+      const lastAccesses = members.map((m) => m.lastAccess).filter(Boolean) as string[]
+      const lastAccess = lastAccesses.length > 0 ? lastAccesses.sort().at(-1)! : null
+      return { ...g, members: members.length, confirmed, pending, lastAccess }
+    })
+    .sort((a, b) => compareNaturally(a.name, b.name))
 
   return (
     <div className="min-h-screen bg-surface-alt flex flex-col">
@@ -28,19 +31,19 @@ export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }
                 Painel
               </p>
               <p className="font-semibold text-navy text-[15px] leading-none" style={{ fontFamily: 'Jost, sans-serif' }}>
-                Marina & Thiago
+                Mariana & Gabriel
               </p>
             </div>
             <nav className="hidden sm:flex items-center gap-1">
               <button
                 onClick={onNavigateDashboard}
-                className="h-8 px-4 rounded-[8px] text-sm font-medium text-muted hover:text-ink hover:bg-surface-alt transition-colors"
+                className="h-8 px-4 rounded-2 text-sm font-medium text-muted hover:text-ink hover:bg-surface-alt transition-colors"
                 style={{ fontFamily: 'Jost, sans-serif' }}
               >
                 Convidados
               </button>
               <button
-                className="h-8 px-4 rounded-[8px] text-sm font-semibold text-surface"
+                className="h-8 px-4 rounded-2 text-sm font-semibold text-surface"
                 style={{ backgroundColor: '#16223E', fontFamily: 'Jost, sans-serif' }}
               >
                 Grupos
@@ -74,7 +77,7 @@ export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }
           {groupStats.map((g) => (
             <div
               key={g.id}
-              className="bg-surface rounded-[20px] border border-line p-6 flex flex-col gap-4 transition-all duration-150 hover:border-champagne"
+              className="bg-surface rounded-5 border border-line p-6 flex flex-col gap-4 transition-all duration-150 hover:border-champagne"
               style={{ boxShadow: '0 4px 20px rgba(22,34,62,0.05)' }}
             >
               {/* Header */}
@@ -89,7 +92,7 @@ export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }
                   </p>
                 </div>
                 <div
-                  className="w-10 h-10 rounded-[10px] flex items-center justify-center shrink-0"
+                  className="w-10 h-10 rounded-2.5 flex items-center justify-center shrink-0"
                   style={{ backgroundColor: '#F3EEE5' }}
                 >
                   <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -103,7 +106,7 @@ export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }
 
               {/* Confirmed / Pending */}
               <div className="flex items-center gap-4">
-                <div className="flex-1 text-center py-3 rounded-[12px]" style={{ backgroundColor: '#EAF0E6' }}>
+                <div className="flex-1 text-center py-3 rounded-3" style={{ backgroundColor: '#EAF0E6' }}>
                   <p
                     style={{
                       fontFamily: 'Cormorant Garamond, Georgia, serif',
@@ -119,7 +122,7 @@ export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }
                     confirmado{g.confirmed !== 1 ? 's' : ''}
                   </p>
                 </div>
-                <div className="flex-1 text-center py-3 rounded-[12px]" style={{ backgroundColor: '#F3EEE5' }}>
+                <div className="flex-1 text-center py-3 rounded-3" style={{ backgroundColor: '#F3EEE5' }}>
                   <p
                     style={{
                       fontFamily: 'Cormorant Garamond, Georgia, serif',

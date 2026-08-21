@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { signInAdmin } from '@/services/adminData'
 
 interface AdminAccessProps {
   onSuccess: () => void
@@ -6,6 +7,7 @@ interface AdminAccessProps {
 }
 
 export default function AdminAccess({ onSuccess, onBack }: AdminAccessProps) {
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -14,11 +16,11 @@ export default function AdminAccess({ onSuccess, onBack }: AdminAccessProps) {
     e.preventDefault()
     setLoading(true)
     setError('')
-    await new Promise((r) => setTimeout(r, 700))
-    if (password === 'admin123') {
+    try {
+      await signInAdmin(email.trim(), password)
       onSuccess()
-    } else {
-      setError('Senha incorreta. Tente novamente.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível entrar. Tente novamente.')
       setLoading(false)
     }
   }
@@ -26,7 +28,7 @@ export default function AdminAccess({ onSuccess, onBack }: AdminAccessProps) {
   return (
     <div className="min-h-screen bg-surface-alt flex flex-col items-center justify-center px-4">
       <div
-        className="bg-surface rounded-[24px] p-8 w-full max-w-sm border border-line"
+        className="bg-surface  p-8 w-full max-w-sm border border-line"
         style={{ boxShadow: '0 4px 20px rgba(22,34,62,0.06)' }}
       >
         <div className="mb-8">
@@ -46,6 +48,35 @@ export default function AdminAccess({ onSuccess, onBack }: AdminAccessProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="email"
+              className="text-xs font-medium tracking-wide text-ink"
+              style={{ fontFamily: 'Jost, sans-serif', letterSpacing: '0.04em', fontSize: 12 }}
+            >
+              E-mail
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setError('') }}
+              placeholder="seu@email.com"
+              disabled={loading}
+              autoComplete="email"
+              className="w-full h-12 px-4 bg-bg border border-line rounded-[10px] text-ink text-base outline-none transition-all duration-150 disabled:opacity-60"
+              style={{ fontFamily: 'Jost, sans-serif' }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = '#16223E'
+                e.currentTarget.style.boxShadow = '0 0 0 3px rgba(201,168,118,0.12)'
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = '#E4DFD5'
+                e.currentTarget.style.boxShadow = 'none'
+              }}
+            />
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <label
               htmlFor="password"
@@ -82,7 +113,7 @@ export default function AdminAccess({ onSuccess, onBack }: AdminAccessProps) {
 
           <button
             type="submit"
-            disabled={loading || !password}
+            disabled={loading || !email || !password}
             className="w-full h-12 rounded-[10px] font-semibold text-[15px] text-surface transition-all duration-150 disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
             style={{ backgroundColor: '#16223E', fontFamily: 'Jost, sans-serif' }}
             onMouseEnter={(e) => { if (!loading) e.currentTarget.style.backgroundColor = '#1F3159' }}
@@ -110,10 +141,6 @@ export default function AdminAccess({ onSuccess, onBack }: AdminAccessProps) {
           ← Voltar ao site
         </button>
       </div>
-
-      <p className="text-xs text-muted/40 mt-6" style={{ fontFamily: 'Jost, sans-serif' }}>
-        Use <span className="font-mono">admin123</span> para demonstração
-      </p>
     </div>
   )
 }

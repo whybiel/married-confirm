@@ -25,7 +25,7 @@ export default function Seal({ size = 80, className = '' }: SealProps) {
         fill="#C9A876"
         letterSpacing="3"
       >
-        M & T
+        M & G
       </text>
       <text
         x="40"
@@ -37,7 +37,7 @@ export default function Seal({ size = 80, className = '' }: SealProps) {
         fill="#C9A876"
         letterSpacing="2.5"
       >
-        2026
+        10/2026
       </text>
     </svg>
   )

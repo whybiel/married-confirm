@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Seal from '@/components/Seal'
-import { VALID_CODES } from '@/data/mock'
+import { lookupInvite } from '@/services/invite'
+import { getInviteCodeFromUrl, hasPendingInviteAutoSubmit, markInviteAutoSubmitConsumed } from '@/utils/inviteLink'
 
 interface LandingProps {
   onSuccess: (code: string) => void
@@ -8,26 +9,71 @@ interface LandingProps {
 }
 
 export default function Landing({ onSuccess, onAdminLink }: LandingProps) {
-  const [code, setCode] = useState('')
+  const [code, setCode] = useState(() => getInviteCodeFromUrl() ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const onSuccessRef = useRef(onSuccess)
+  onSuccessRef.current = onSuccess
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const trimmed = code.trim().toUpperCase()
+  const submitCode = async (rawCode: string) => {
+    const trimmed = rawCode.trim().toUpperCase()
     if (!trimmed) {
       setError('Por favor, informe o código do convite.')
       return
     }
     setLoading(true)
     setError('')
-    await new Promise((r) => setTimeout(r, 900))
-    if (VALID_CODES[trimmed]) {
-      onSuccess(trimmed)
-    } else {
-      setError('Não encontramos esse convite. Verifique o código informado e tente novamente.')
+    try {
+      const invite = await lookupInvite(trimmed)
+      if (invite) {
+        onSuccess(trimmed)
+      } else {
+        setError('Não encontramos esse convite. Verifique o código informado e tente novamente.')
+      }
+    } catch {
+      setError('Não foi possível verificar o código. Tente novamente.')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
+  }
+
+  useEffect(() => {
+    if (!hasPendingInviteAutoSubmit()) return
+    const urlCode = getInviteCodeFromUrl()
+    if (!urlCode) return
+
+    let cancelled = false
+
+    const run = async () => {
+      setLoading(true)
+      setError('')
+      try {
+        const invite = await lookupInvite(urlCode)
+        if (cancelled) return
+        markInviteAutoSubmitConsumed()
+        if (invite) {
+          onSuccessRef.current(urlCode)
+        } else {
+          setError('Não encontramos esse convite. Verifique o código informado e tente novamente.')
+        }
+      } catch {
+        if (cancelled) return
+        markInviteAutoSubmitConsumed()
+        setError('Não foi possível verificar o código. Tente novamente.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await submitCode(code)
   }
 
   return (
@@ -45,7 +91,7 @@ export default function Landing({ onSuccess, onAdminLink }: LandingProps) {
             letterSpacing: '-0.01em',
           }}
         >
-          Marina & Thiago
+          Mariana & Gabriel
         </h1>
 
         <p className="text-center text-ink text-base leading-relaxed mb-1" style={{ fontFamily: 'Jost, sans-serif' }}>
@@ -69,9 +115,9 @@ export default function Landing({ onSuccess, onAdminLink }: LandingProps) {
               type="text"
               value={code}
               onChange={(e) => { setCode(e.target.value.toUpperCase()); setError('') }}
-              placeholder="Ex: AB12CD"
+              placeholder="Ex: GGG3MMM"
               disabled={loading}
-              maxLength={6}
+              maxLength={16}
               className="w-full h-12 px-4 bg-surface border border-line rounded-[10px] text-ink text-base placeholder-muted/60 outline-none transition-all duration-150 disabled:opacity-60"
               style={{
                 fontFamily: 'Jost, sans-serif',
@@ -88,7 +134,7 @@ export default function Landing({ onSuccess, onAdminLink }: LandingProps) {
             />
             {error && (
               <div
-                className="flex items-start gap-2 px-3 py-2.5 rounded-[8px] mt-1"
+                className="flex items-start gap-2 px-3 py-2.5 rounded-lg mt-1"
                 style={{ backgroundColor: '#F5E9E7' }}
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="mt-0.5 shrink-0">
@@ -137,7 +183,7 @@ export default function Landing({ onSuccess, onAdminLink }: LandingProps) {
           <div className="h-px w-12 bg-line" />
         </div>
         <p className="text-xs text-muted text-center" style={{ fontFamily: 'Jost, sans-serif' }}>
-          14 de setembro de 2026 · Igreja São Francisco, São Paulo
+          03 de outubro de 2026 · Igreja Nossa Senhora da Glória, Santa Cruz - Rio de Janeiro
         </p>
         <button
           onClick={onAdminLink}

@@ -1,10 +1,17 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { Guest, GroupDef, formatLastAccess } from '@/data/mock'
+import { parseGuestSpreadsheet, type ImportRow } from '@/services/importGuests'
+import { compareNaturally } from '@/utils/compareNaturally'
+import { copyInviteLink } from '@/utils/inviteLink'
+import type { GuestWrite } from '@/services/adminData'
 
 interface DashboardProps {
   guests: Guest[]
   groups: GroupDef[]
-  onUpdate: (guests: Guest[]) => void
+  loading?: boolean
+  onSaveGuest: (data: GuestWrite, id?: string) => Promise<void>
+  onDeleteGuest: (id: string) => Promise<void>
+  onImport: (rows: ImportRow[]) => Promise<void>
   onNavigateGroups: () => void
   onLogout: () => void
 }
@@ -23,12 +30,6 @@ interface GuestFormData {
 
 type ImportStep = 1 | 2 | 3 | 4
 
-const mockImportRows = [
-  { id: 'N01', name: 'Carla Mendes', note: '', group: 'Família Mendes', inviteDelivered: true, confirmed: false, error: null },
-  { id: 'N02', name: 'André Mendes', note: 'Diabético', group: 'Família Mendes', inviteDelivered: false, confirmed: false, error: null },
-  { id: 'N03', name: '', note: '', group: 'Conhecidos', inviteDelivered: false, confirmed: false, error: 'Nome em branco' },
-  { id: 'N04', name: 'Tatiane Ramos', note: '', group: '', inviteDelivered: false, confirmed: false, error: 'Grupo não identificado' },
-]
 
 function StatusChip({ confirmed }: { confirmed: boolean }) {
   return confirmed ? (
@@ -58,6 +59,57 @@ function DeliveredChip({ delivered }: { delivered: boolean }) {
   )
 }
 
+function CopyInviteLinkButton({
+  code,
+  copied,
+  onCopied,
+  label,
+}: {
+  code?: string
+  copied: boolean
+  onCopied: () => void
+  label?: string
+}) {
+  const [copyError, setCopyError] = useState(false)
+
+  const handleCopy = async () => {
+    if (!code) return
+    try {
+      await copyInviteLink(code)
+      setCopyError(false)
+      onCopied()
+    } catch {
+      setCopyError(true)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      disabled={!code}
+      title={!code ? 'Sem código de convite' : copyError ? 'Não foi possível copiar' : copied ? 'Link copiado!' : 'Copiar link do convite'}
+      className="h-8 px-2 rounded-2.5 flex items-center justify-center gap-1.5 hover:bg-surface-alt transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+    >
+      {copied ? (
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M3 7.5l2.5 2.5L11 4" stroke="#6F8F6B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M6 8.5A3.5 3.5 0 0 0 8.5 6l2-2A3.5 3.5 0 0 0 5.5 1L4.2 2.3" stroke="#5B6B85" strokeWidth="1.3" strokeLinecap="round" />
+          <path d="M8 5.5A3.5 3.5 0 0 0 5.5 8l-2 2A3.5 3.5 0 1 0 8.5 13L9.8 11.7" stroke="#5B6B85" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      )}
+      {label && (
+        <span className="text-xs font-medium whitespace-nowrap" style={{ fontFamily: 'Jost, sans-serif', color: copied ? '#6F8F6B' : '#5B6B85' }}>
+          {copied ? 'Link copiado' : label}
+        </span>
+      )}
+    </button>
+  )
+}
+
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
@@ -79,7 +131,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 function StatCard({ label, value, sub }: { label: string; value: number; sub?: string }) {
   return (
     <div
-      className="bg-surface rounded-[20px] border border-line p-5 flex flex-col gap-1 min-w-[120px]"
+      className="bg-surface rounded-[20px] border border-line p-5 flex flex-col gap-1 min-w-30"
       style={{ boxShadow: '0 4px 20px rgba(22,34,62,0.05)' }}
     >
       <p className="text-xs font-medium text-muted uppercase tracking-wider" style={{ fontFamily: 'Jost, sans-serif', letterSpacing: '0.06em', fontSize: 11 }}>
@@ -109,7 +161,7 @@ function GuestFormModal({
 }: {
   guest: Guest | null
   groups: GroupDef[]
-  onSave: (data: GuestFormData, id?: string) => void
+  onSave: (data: GuestFormData, id?: string) => Promise<void>
   onClose: () => void
 }) {
   const [form, setForm] = useState<GuestFormData>({
@@ -120,17 +172,22 @@ function GuestFormModal({
     confirmed: guest?.confirmed ?? false,
   })
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const isEdit = !!guest
 
   const handleSave = async () => {
     if (!form.name.trim()) return
     setSaving(true)
-    await new Promise((r) => setTimeout(r, 600))
-    onSave(form, guest?.id)
-    setSaving(false)
+    setSaveError('')
+    try {
+      await onSave(form, guest?.id)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Não foi possível salvar.')
+      setSaving(false)
+    }
   }
 
-  const groupNames = Array.from(new Set(groups.map((g) => g.name)))
+  const groupNames = Array.from(new Set(groups.map((g) => g.name))).sort(compareNaturally)
 
   return (
     <div
@@ -139,7 +196,7 @@ function GuestFormModal({
       onClick={(e) => { if (e.target === e.currentTarget && !saving) onClose() }}
     >
       <div
-        className="bg-surface w-full max-w-[480px] rounded-t-[24px] sm:rounded-[24px] flex flex-col"
+        className="bg-surface w-full max-w-120 rounded-t-3xl sm:rounded-3xl flex flex-col"
         style={{ boxShadow: '0 20px 60px rgba(22,34,62,0.18)' }}
       >
         <div className="px-8 pt-8 pb-6 border-b border-line">
@@ -218,7 +275,13 @@ function GuestFormModal({
           )}
         </div>
 
-        <div className="px-8 pb-8 pt-4 flex items-center gap-3 border-t border-line">
+        <div className="px-8 pb-8 pt-4 flex flex-col gap-3 border-t border-line">
+          {saveError && (
+            <p className="text-sm" style={{ color: '#B5564A', fontFamily: 'Jost, sans-serif' }}>
+              {saveError}
+            </p>
+          )}
+          <div className="flex items-center gap-3">
           <button
             onClick={onClose}
             disabled={saving}
@@ -230,7 +293,7 @@ function GuestFormModal({
           <button
             onClick={handleSave}
             disabled={!form.name.trim() || saving}
-            className="flex-[2] h-12 rounded-[10px] text-surface font-semibold text-[15px] flex items-center justify-center gap-2 disabled:opacity-50"
+            className="flex-2 h-12 rounded-[10px] text-surface font-semibold text-[15px] flex items-center justify-center gap-2 disabled:opacity-50"
             style={{ backgroundColor: '#16223E', fontFamily: 'Jost, sans-serif' }}
           >
             {saving ? (
@@ -243,29 +306,59 @@ function GuestFormModal({
               </>
             ) : isEdit ? 'Salvar alterações' : 'Adicionar convidado'}
           </button>
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
-function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete: (rows: typeof mockImportRows) => void }) {
+function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete: (rows: ImportRow[]) => Promise<void> }) {
   const [step, setStep] = useState<ImportStep>(1)
-  const [rows, setRows] = useState(mockImportRows)
+  const [rows, setRows] = useState<ImportRow[]>([])
   const [importing, setImporting] = useState(false)
-
+  const [parsing, setParsing] = useState(false)
+  const [fileError, setFileError] = useState<string | null>(null)
+  const [fileName, setFileName] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const validRows = rows.filter((r) => !r.error)
   const errorRows = rows.filter((r) => r.error)
 
   const handleUpload = () => {
-    setTimeout(() => setStep(2), 600)
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    setFileError(null)
+    setParsing(true)
+
+    try {
+      const parsed = await parseGuestSpreadsheet(file)
+      setRows(parsed)
+      setFileName(file.name)
+      setStep(2)
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : 'Erro ao processar o arquivo.')
+    } finally {
+      setParsing(false)
+    }
   }
 
   const handleConfirmImport = async () => {
     setImporting(true)
-    await new Promise((r) => setTimeout(r, 1200))
-    setStep(4)
-    setImporting(false)
+    setFileError(null)
+    try {
+      await onComplete(validRows)
+      setStep(4)
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : 'Não foi possível importar os convidados.')
+    } finally {
+      setImporting(false)
+    }
   }
 
   return (
@@ -275,7 +368,7 @@ function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete:
       onClick={(e) => { if (e.target === e.currentTarget && !importing) onClose() }}
     >
       <div
-        className="bg-surface w-full max-w-[540px] rounded-t-[24px] sm:rounded-[24px] flex flex-col max-h-[90vh]"
+        className="bg-surface w-full max-w-135 rounded-t-3xl sm:rounded-3xl flex flex-col max-h-[90vh]"
         style={{ boxShadow: '0 20px 60px rgba(22,34,62,0.18)' }}
       >
         <div className="px-8 pt-8 pb-5 border-b border-line">
@@ -312,39 +405,68 @@ function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete:
           {step === 1 && (
             <div className="flex flex-col gap-5">
               <div
-                className="border-2 border-dashed rounded-[16px] p-10 flex flex-col items-center gap-3 cursor-pointer transition-colors"
-                style={{ borderColor: '#E4DFD5' }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#C9A876'; e.currentTarget.style.backgroundColor = '#FAF8F4' }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E4DFD5'; e.currentTarget.style.backgroundColor = 'transparent' }}
-                onClick={handleUpload}
+                className="border-2 border-dashed rounded-4 p-10 flex flex-col items-center gap-3 cursor-pointer transition-colors"
+                style={{ borderColor: fileError ? '#B5564A' : '#E4DFD5' }}
+                onMouseEnter={(e) => { if (!parsing) { e.currentTarget.style.borderColor = '#C9A876'; e.currentTarget.style.backgroundColor = '#FAF8F4' } }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = fileError ? '#B5564A' : '#E4DFD5'; e.currentTarget.style.backgroundColor = 'transparent' }}
+                onClick={() => { if (!parsing) handleUpload() }}
               >
-                <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-                  <path d="M6 24v4a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2v-4M18 6v18M12 12l6-6 6 6" stroke="#5B6B85" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <p className="font-semibold text-ink text-[15px]" style={{ fontFamily: 'Jost, sans-serif' }}>
-                  Clique para enviar o arquivo
-                </p>
-                <p className="text-muted text-sm text-center" style={{ fontFamily: 'Jost, sans-serif' }}>
-                  Aceita .csv ou .xlsx — máx. 5 MB
-                </p>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  style={{ display: 'none' }}
+                />
+                {parsing ? (
+                  <>
+                    <svg className="animate-spin" width="36" height="36" viewBox="0 0 36 36" fill="none">
+                      <circle cx="18" cy="18" r="14" stroke="#E4DFD5" strokeWidth="2" />
+                      <path d="M18 4a14 14 0 0 1 14 14" stroke="#16223E" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                    <p className="font-semibold text-ink text-[15px]" style={{ fontFamily: 'Jost, sans-serif' }}>
+                      Processando planilha...
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+                      <path d="M6 24v4a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2v-4M18 6v18M12 12l6-6 6 6" stroke="#5B6B85" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <p className="font-semibold text-ink text-[15px]" style={{ fontFamily: 'Jost, sans-serif' }}>
+                      Clique para enviar o arquivo
+                    </p>
+                    <p className="text-muted text-sm text-center" style={{ fontFamily: 'Jost, sans-serif' }}>
+                      Aceita .xlsx — máx. 5 MB
+                    </p>
+                  </>
+                )}
               </div>
-              <div className="flex items-center gap-2 p-4 rounded-[12px] bg-surface-alt">
+              {fileError && (
+                <p className="text-sm px-1" style={{ color: '#B5564A', fontFamily: 'Jost, sans-serif' }}>
+                  {fileError}
+                </p>
+              )}
+              <div className="flex items-center gap-2 p-4 rounded-3 bg-surface-alt">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <circle cx="8" cy="8" r="7" stroke="#5B6B85" strokeWidth="1.2" />
                   <path d="M8 7v5M8 5h.01" stroke="#5B6B85" strokeWidth="1.3" strokeLinecap="round" />
                 </svg>
                 <p className="text-sm text-muted flex-1" style={{ fontFamily: 'Jost, sans-serif' }}>
-                  Colunas esperadas: ID, Nome, Observação, Grupo, Convite entregue, Confirmou presença
+                  Colunas esperadas: ID, Nome, Observação, Grupo, Código, Convite entregue?, Confirmou presença?
                 </p>
               </div>
-              <button className="text-sm font-medium text-navy underline underline-offset-2 text-left" style={{ fontFamily: 'Jost, sans-serif' }}>
-                Baixar modelo de planilha
-              </button>
+
             </div>
           )}
 
           {step === 2 && (
             <div className="flex flex-col gap-5">
+              {fileName && (
+                <p className="text-sm text-muted" style={{ fontFamily: 'Jost, sans-serif' }}>
+                  Arquivo: <span className="text-ink font-medium">{fileName}</span>
+                </p>
+              )}
               <div className="flex items-center gap-3 flex-wrap">
                 <span
                   className="px-3 py-1.5 rounded-full text-sm font-semibold"
@@ -368,7 +490,7 @@ function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete:
                 )}
               </div>
 
-              <div className="border border-line rounded-[14px] overflow-hidden">
+              <div className="border border-line rounded-3.5 overflow-hidden">
                 <div className="grid grid-cols-[auto_1fr_1fr_auto] text-xs font-semibold text-muted px-4 py-2.5 bg-surface-alt border-b border-line"
                   style={{ fontFamily: 'Jost, sans-serif', letterSpacing: '0.04em' }}>
                   <span className="w-12">ID</span>
@@ -389,7 +511,9 @@ function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete:
                       </p>
                       {row.error && <p className="text-xs mt-0.5" style={{ color: '#B5564A', fontFamily: 'Jost, sans-serif' }}>{row.error}</p>}
                     </div>
-                    <span className="text-sm text-muted" style={{ fontFamily: 'Jost, sans-serif' }}>{row.group || '—'}</span>
+                    <span className="text-sm text-muted" style={{ fontFamily: 'Jost, sans-serif' }}>
+                      {row.group || '—'}{row.groupCode ? ` · ${row.groupCode}` : ''}
+                    </span>
                     <button
                       onClick={() => setRows((prev) => prev.filter((r) => r.id !== row.id))}
                       className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-terra-light transition-colors opacity-0 group-hover:opacity-100"
@@ -416,7 +540,7 @@ function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete:
           {step === 3 && (
             <div className="flex flex-col gap-5">
               <div
-                className="p-5 rounded-[16px] flex items-center gap-4"
+                className="p-5 rounded-4 flex items-center gap-4"
                 style={{ backgroundColor: '#EBE0CB' }}
               >
                 <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -432,8 +556,13 @@ function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete:
                   </p>
                 </div>
               </div>
+              {fileError && (
+                <p className="text-sm" style={{ color: '#B5564A', fontFamily: 'Jost, sans-serif' }}>
+                  {fileError}
+                </p>
+              )}
               <p className="text-muted text-sm leading-relaxed" style={{ fontFamily: 'Jost, sans-serif' }}>
-                Ao confirmar, os convidados serão adicionados à lista. Esta ação não pode ser desfeita em massa — convidados individuais podem ser editados ou removidos depois.
+                Ao confirmar, a lista atual será substituída pelos convidados importados. Convidados individuais podem ser editados ou removidos depois.
               </p>
             </div>
           )}
@@ -468,7 +597,7 @@ function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete:
             <button
               onClick={handleConfirmImport}
               disabled={importing}
-              className="flex-[2] h-12 rounded-[10px] text-surface font-semibold text-[15px] flex items-center justify-center gap-2 disabled:opacity-70"
+              className="flex-2 h-12 rounded-[10px] text-surface font-semibold text-[15px] flex items-center justify-center gap-2 disabled:opacity-70"
               style={{ backgroundColor: '#16223E', fontFamily: 'Jost, sans-serif' }}
             >
               {importing ? (
@@ -488,7 +617,7 @@ function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete:
   )
 }
 
-export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, onLogout }: DashboardProps) {
+export default function Dashboard({ guests, groups, loading, onSaveGuest, onDeleteGuest, onImport, onNavigateGroups, onLogout }: DashboardProps) {
   const [search, setSearch] = useState('')
   const [filterGroup, setFilterGroup] = useState('all')
   const [filterDelivered, setFilterDelivered] = useState<FilterDelivered>('all')
@@ -498,8 +627,20 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
   const [showImport, setShowImport] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
+  const [copiedGuestId, setCopiedGuestId] = useState<string | null>(null)
+  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const groupNames = Array.from(new Set(guests.map((g) => g.group).filter(Boolean)))
+  const groupNames = Array.from(new Set(guests.map((g) => g.group).filter(Boolean))).sort(compareNaturally)
+
+  const groupCodeByGuestId = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const group of groups) {
+      for (const guestId of group.guestIds) {
+        map.set(guestId, group.code)
+      }
+    }
+    return map
+  }, [groups])
 
   const filtered = useMemo(() => {
     let result = [...guests]
@@ -510,8 +651,8 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
     if (filterConfirmed === 'yes') result = result.filter((g) => g.confirmed)
     if (filterConfirmed === 'no') result = result.filter((g) => !g.confirmed)
     result.sort((a, b) => {
-      if (sortKey === 'name') return a.name.localeCompare(b.name)
-      if (sortKey === 'group') return a.group.localeCompare(b.group)
+      if (sortKey === 'name') return a.name.localeCompare(b.name, 'pt-BR', { numeric: true, sensitivity: 'base' })
+      if (sortKey === 'group') return compareNaturally(a.group, b.group)
       if (sortKey === 'confirmed') return Number(b.confirmed) - Number(a.confirmed)
       if (sortKey === 'lastAccess') return (b.lastAccess ?? '').localeCompare(a.lastAccess ?? '')
       return 0
@@ -536,27 +677,20 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
 
   const hasFilters = search || filterGroup !== 'all' || filterDelivered !== 'all' || filterConfirmed !== 'all'
 
-  const handleSave = (data: GuestFormData, id?: string) => {
-    if (id) {
-      onUpdate(guests.map((g) => g.id === id ? { ...g, ...data } : g))
-    } else {
-      const newId = String(Date.now()).slice(-4)
-      onUpdate([...guests, {
-        id: newId,
-        name: data.name,
-        note: data.note,
-        group: data.group,
-        inviteDelivered: data.inviteDelivered,
-        confirmed: false,
-        lastAccess: null,
-      }])
-    }
+  const handleSave = async (data: GuestFormData, id?: string) => {
+    await onSaveGuest(data, id)
     setEditGuest(null)
   }
 
-  const handleDelete = (id: string) => {
-    onUpdate(guests.filter((g) => g.id !== id))
+  const handleDelete = async (id: string) => {
+    await onDeleteGuest(id)
     setDeleteId(null)
+  }
+
+  const handleCopiedInviteLink = (guestId: string) => {
+    if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current)
+    setCopiedGuestId(guestId)
+    copiedTimeoutRef.current = setTimeout(() => setCopiedGuestId(null), 2000)
   }
 
   const selectEl = "h-10 px-3 bg-surface border border-line rounded-[10px] text-ink text-sm outline-none"
@@ -572,19 +706,19 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
                 Painel
               </p>
               <p className="font-semibold text-navy text-[15px] leading-none" style={{ fontFamily: 'Jost, sans-serif' }}>
-                Marina & Thiago
+                Mariana & Gabriel
               </p>
             </div>
             <nav className="hidden sm:flex items-center gap-1">
               <button
-                className="h-8 px-4 rounded-[8px] text-sm font-semibold text-surface"
+                className="h-8 px-4 rounded-2 text-sm font-semibold text-surface"
                 style={{ backgroundColor: '#16223E', fontFamily: 'Jost, sans-serif' }}
               >
                 Convidados
               </button>
               <button
                 onClick={onNavigateGroups}
-                className="h-8 px-4 rounded-[8px] text-sm font-medium text-muted hover:text-ink hover:bg-surface-alt transition-colors"
+                className="h-8 px-4 rounded-2 text-sm font-medium text-muted hover:text-ink hover:bg-surface-alt transition-colors"
                 style={{ fontFamily: 'Jost, sans-serif' }}
               >
                 Grupos
@@ -612,20 +746,20 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
               Convidados
             </h1>
             <p className="text-muted text-sm mt-0.5" style={{ fontFamily: 'Jost, sans-serif' }}>
-              Gerenciar a lista de convidados do casamento
+              {loading ? 'Carregando lista…' : 'Gerenciar a lista de convidados do casamento'}
             </p>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowImport(true)}
-              className="h-10 px-5 rounded-[10px] border border-navy text-navy text-sm font-semibold hover:bg-navy hover:text-surface transition-all"
+              className="h-10 px-5 rounded-2.5 border border-navy text-navy text-sm font-semibold hover:bg-navy hover:text-surface transition-all"
               style={{ fontFamily: 'Jost, sans-serif' }}
             >
               Importar
             </button>
             <button
               onClick={() => setEditGuest('new')}
-              className="h-10 px-5 rounded-[10px] text-surface text-sm font-semibold flex items-center gap-1.5"
+              className="h-10 px-5 rounded-2.5 text-surface text-sm font-semibold flex items-center gap-1.5"
               style={{ backgroundColor: '#16223E', fontFamily: 'Jost, sans-serif' }}
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#1F3159' }}
               onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#16223E' }}
@@ -648,9 +782,9 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
         </div>
 
         {/* Filters */}
-        <div className="bg-surface rounded-[16px] border border-line p-4 mb-4" style={{ boxShadow: '0 2px 8px rgba(22,34,62,0.04)' }}>
+        <div className="bg-surface rounded-4 border border-line p-4 mb-4" style={{ boxShadow: '0 2px 8px rgba(22,34,62,0.04)' }}>
           <div className="flex flex-wrap gap-3 items-center">
-            <div className="relative flex-1 min-w-[180px]">
+            <div className="relative flex-1 min-w-45">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" width="15" height="15" viewBox="0 0 15 15" fill="none">
                 <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.3" />
                 <path d="M10 10l3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
@@ -660,7 +794,7 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar por nome ou grupo…"
-                className="w-full h-10 pl-9 pr-4 bg-bg border border-line rounded-[10px] text-ink text-sm outline-none transition-all"
+                className="w-full h-10 pl-9 pr-4 bg-bg border border-line rounded-2.5 text-ink text-sm outline-none transition-all"
                 style={{ fontFamily: 'Jost, sans-serif' }}
                 onFocus={(e) => { e.currentTarget.style.borderColor = '#16223E' }}
                 onBlur={(e) => { e.currentTarget.style.borderColor = '#E4DFD5' }}
@@ -695,8 +829,12 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
         </div>
 
         {/* Table (desktop) */}
-        <div className="hidden sm:block bg-surface rounded-[20px] border border-line overflow-hidden" style={{ boxShadow: '0 4px 20px rgba(22,34,62,0.05)' }}>
-          {filtered.length === 0 ? (
+        <div className="hidden sm:block bg-surface rounded-5 border border-line overflow-hidden" style={{ boxShadow: '0 4px 20px rgba(22,34,62,0.05)' }}>
+          {loading ? (
+            <div className="flex flex-col items-center py-20 gap-3 text-center px-4">
+              <p className="text-muted" style={{ fontFamily: 'Jost, sans-serif' }}>Carregando convidados…</p>
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center py-20 gap-4 text-center px-4">
               <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
                 <rect x="7" y="9" width="26" height="22" rx="3" stroke="#E4DFD5" strokeWidth="1.5" />
@@ -711,10 +849,10 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
                 </button>
               ) : (
                 <div className="flex gap-3">
-                  <button onClick={() => setShowImport(true)} className="text-sm font-medium text-navy border border-navy px-4 py-2 rounded-[8px]" style={{ fontFamily: 'Jost, sans-serif' }}>
+                  <button onClick={() => setShowImport(true)} className="text-sm font-medium text-navy border border-navy px-4 py-2 rounded-2.5" style={{ fontFamily: 'Jost, sans-serif' }}>
                     Importar convidados
                   </button>
-                  <button onClick={() => setEditGuest('new')} className="text-sm font-semibold text-surface px-4 py-2 rounded-[8px]" style={{ backgroundColor: '#16223E', fontFamily: 'Jost, sans-serif' }}>
+                  <button onClick={() => setEditGuest('new')} className="text-sm font-semibold text-surface px-4 py-2 rounded-2.5" style={{ backgroundColor: '#16223E', fontFamily: 'Jost, sans-serif' }}>
                     Adicionar convidado
                   </button>
                 </div>
@@ -724,7 +862,7 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
             <table className="w-full">
               <thead>
                 <tr className="border-b border-line">
-                  {['ID', 'Nome', 'Observação', 'Grupo', 'Convite', 'Confirmação', 'Último acesso', ''].map((h) => (
+                  {['ID', 'Nome', 'Grupo', 'Código', 'Convite', 'Confirmação', 'Último acesso'].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap"
                       style={{ fontFamily: 'Jost, sans-serif', letterSpacing: '0.06em', backgroundColor: '#FAF8F4' }}>
                       {h}
@@ -733,30 +871,39 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((guest, i) => (
+                {filtered.map((guest) => (
                   <tr
                     key={guest.id}
                     className="border-b border-line last:border-b-0 hover:bg-bg transition-colors group"
                   >
-                    <td className="px-4 py-3.5 text-xs text-muted font-mono" style={{ fontFamily: 'Jost, sans-serif' }}>{guest.id}</td>
+                    <td className="px-4 py-3.5 text-xs text-muted font-mono" style={{ fontFamily: 'Jost, sans-serif' }}>{guest.spreadsheetId ?? '—'}</td>
                     <td className="px-4 py-3.5 font-medium text-[15px] text-ink whitespace-nowrap" style={{ fontFamily: 'Jost, sans-serif' }}>{guest.name}</td>
-                    <td className="px-4 py-3.5 text-sm text-muted max-w-[140px] truncate" style={{ fontFamily: 'Jost, sans-serif' }}>{guest.note || '—'}</td>
                     <td className="px-4 py-3.5 text-sm text-ink whitespace-nowrap" style={{ fontFamily: 'Jost, sans-serif' }}>{guest.group}</td>
+                    <td className="px-4 py-3.5 text-sm text-navy font-mono whitespace-nowrap" style={{ fontFamily: 'Jost, sans-serif' }}>
+                      {groupCodeByGuestId.get(guest.id) ?? '—'}
+                    </td>
                     <td className="px-4 py-3.5"><DeliveredChip delivered={guest.inviteDelivered} /></td>
                     <td className="px-4 py-3.5"><StatusChip confirmed={guest.confirmed} /></td>
                     <td className="px-4 py-3.5 text-sm text-muted whitespace-nowrap" style={{ fontFamily: 'Jost, sans-serif' }}>{formatLastAccess(guest.lastAccess)}</td>
                     <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => setEditGuest(guest)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-alt transition-colors" title="Editar">
-                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                            <path d="M10 2l2 2-8 8H2v-2L10 2z" stroke="#5B6B85" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        </button>
-                        <button onClick={() => setDeleteId(guest.id)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-terra-light transition-colors" title="Excluir">
-                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                            <path d="M2 4h10M5 4V3h4v1M5.5 6.5v4M8.5 6.5v4M3 4l1 8h6l1-8" stroke="#B5564A" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        </button>
+                      <div className="flex items-center gap-1">
+                        <CopyInviteLinkButton
+                          code={groupCodeByGuestId.get(guest.id)}
+                          copied={copiedGuestId === guest.id}
+                          onCopied={() => handleCopiedInviteLink(guest.id)}
+                        />
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => setEditGuest(guest)} className="w-8 h-8 rounded-2.5 flex items-center justify-center hover:bg-surface-alt transition-colors" title="Editar">
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                              <path d="M10 2l2 2-8 8H2v-2L10 2z" stroke="#5B6B85" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
+                          <button onClick={() => setDeleteId(guest.id)} className="w-8 h-8 rounded-2.5 flex items-center justify-center hover:bg-terra-light transition-colors" title="Excluir">
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                              <path d="M2 4h10M5 4V3h4v1M5.5 6.5v4M8.5 6.5v4M3 4l1 8h6l1-8" stroke="#B5564A" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -768,7 +915,11 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
 
         {/* Card list (mobile) */}
         <div className="sm:hidden flex flex-col gap-3">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="flex flex-col items-center py-16 gap-3 text-center">
+              <p className="text-muted" style={{ fontFamily: 'Jost, sans-serif' }}>Carregando convidados…</p>
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center py-16 gap-3 text-center">
               <p className="font-semibold text-ink" style={{ fontFamily: 'Jost, sans-serif' }}>
                 {hasFilters ? 'Nenhum resultado encontrado.' : 'Nenhum convidado cadastrado.'}
@@ -778,7 +929,7 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
             filtered.map((guest) => (
               <div
                 key={guest.id}
-                className="bg-surface rounded-[20px] border border-line p-5"
+                className="bg-surface rounded-5 border border-line p-5"
                 style={{ boxShadow: '0 4px 20px rgba(22,34,62,0.05)' }}
               >
                 <div className="flex items-start justify-between mb-3">
@@ -787,12 +938,18 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
                     <p className="text-sm text-muted mt-0.5" style={{ fontFamily: 'Jost, sans-serif' }}>{guest.group}</p>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <button onClick={() => setEditGuest(guest)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-alt transition-colors">
+                    <CopyInviteLinkButton
+                      code={groupCodeByGuestId.get(guest.id)}
+                      copied={copiedGuestId === guest.id}
+                      onCopied={() => handleCopiedInviteLink(guest.id)}
+                      label="Copiar link"
+                    />
+                    <button onClick={() => setEditGuest(guest)} className="w-8 h-8 rounded-2.5 flex items-center justify-center hover:bg-surface-alt transition-colors">
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                         <path d="M10 2l2 2-8 8H2v-2L10 2z" stroke="#5B6B85" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     </button>
-                    <button onClick={() => setDeleteId(guest.id)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-terra-light transition-colors">
+                    <button onClick={() => setDeleteId(guest.id)} className="w-8 h-8 rounded-2.5 flex items-center justify-center hover:bg-terra-light transition-colors">
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                         <path d="M2 4h10M5 4V3h4v1M5.5 6.5v4M8.5 6.5v4M3 4l1 8h6l1-8" stroke="#B5564A" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
@@ -841,7 +998,7 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
       {showImport && (
         <ImportModal
           onClose={() => setShowImport(false)}
-          onComplete={() => setShowImport(false)}
+          onComplete={onImport}
         />
       )}
 
@@ -853,7 +1010,7 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
           onClick={(e) => { if (e.target === e.currentTarget) setDeleteId(null) }}
         >
           <div
-            className="bg-surface rounded-[24px] p-8 w-full max-w-sm flex flex-col gap-5"
+            className="bg-surface rounded-6 p-8 w-full max-w-sm flex flex-col gap-5"
             style={{ boxShadow: '0 20px 60px rgba(22,34,62,0.18)' }}
           >
             <div>
@@ -865,12 +1022,12 @@ export default function Dashboard({ guests, groups, onUpdate, onNavigateGroups, 
               </p>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setDeleteId(null)} className="flex-1 h-11 rounded-[10px] text-slate font-semibold text-[15px]" style={{ fontFamily: 'Jost, sans-serif' }}>
+              <button onClick={() => setDeleteId(null)} className="flex-1 h-11 rounded-2.5 text-slate font-semibold text-[15px]" style={{ fontFamily: 'Jost, sans-serif' }}>
                 Cancelar
               </button>
               <button
                 onClick={() => handleDelete(deleteId)}
-                className="flex-1 h-11 rounded-[10px] text-surface font-semibold text-[15px]"
+                className="flex-1 h-11 rounded-2.5 text-surface font-semibold text-[15px]"
                 style={{ backgroundColor: '#B5564A', fontFamily: 'Jost, sans-serif' }}
               >
                 Remover

@@ -32,7 +32,7 @@ export default function Sucesso({ onBack }: SucessoProps) {
 
         <div className="flex flex-col gap-3 w-full">
           <a
-            href="#"
+            href="https://marianareinaldo.meuchadepanela.com.br"
             className="w-full h-12 rounded-[10px] border font-semibold text-[15px] flex items-center justify-center gap-2 transition-all duration-150"
             style={{
               borderColor: '#16223E',
@@ -65,7 +65,7 @@ export default function Sucesso({ onBack }: SucessoProps) {
           <div className="h-px w-12 bg-line" />
         </div>
         <p className="text-xs text-muted/50 text-center" style={{ fontFamily: 'Jost, sans-serif' }}>
-          14 de setembro de 2026 · Igreja São Francisco, São Paulo
+          03 de outubro de 2026 · Igreja Nossa Senhora da Glória, Santa Cruz - Rio de Janeiro
         </p>
         <button
           onClick={onBack}

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Guest, GroupDef, initialGroups, VALID_CODES } from '@/data/mock'
+import { Guest } from '@/data/mock'
+import { lookupInvite } from '@/services/invite'
 
 interface ConfirmarProps {
   code: string
-  guests: Guest[]
-  onConfirm: (confirmedIds: string[]) => void
+  onConfirm: (confirmedIds: string[]) => Promise<void>
   onBack: () => void
 }
 
@@ -17,7 +17,7 @@ function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => voi
       onClick={onChange}
       aria-checked={checked}
       role="checkbox"
-      className="shrink-0 w-[22px] h-[22px] rounded-[6px] border flex items-center justify-center transition-all duration-150"
+      className="shrink-0 w-5.5 h-5.5 rounded-1.5 border flex items-center justify-center transition-all duration-150"
       style={{
         borderColor: checked ? '#16223E' : '#E4DFD5',
         backgroundColor: checked ? '#16223E' : 'transparent',
@@ -45,7 +45,7 @@ function SkeletonCard() {
       className="bg-surface border border-line rounded-[20px] p-5 flex items-center gap-4 animate-skeleton"
       style={{ boxShadow: '0 4px 20px rgba(22,34,62,0.06)' }}
     >
-      <div className="w-[22px] h-[22px] rounded-[6px] bg-line shrink-0" />
+      <div className="w-5.5 h-5.5 rounded-1.5 bg-line shrink-0" />
       <div className="flex-1 flex flex-col gap-2">
         <div className="h-4 w-32 rounded bg-line" />
         <div className="h-5 w-20 rounded-full bg-line" />
@@ -75,30 +75,37 @@ function StatusChip({ confirmed }: { confirmed: boolean }) {
   )
 }
 
-export default function Confirmar({ code, guests, onConfirm, onBack }: ConfirmarProps) {
+export default function Confirmar({ code, onConfirm, onBack }: ConfirmarProps) {
   const [pageState, setPageState] = useState<PageState>('loading')
   const [groupGuests, setGroupGuests] = useState<Guest[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [modalError, setModalError] = useState('')
 
   useEffect(() => {
-    const groupId = VALID_CODES[code]
-    const group = initialGroups.find((g) => g.id === groupId)
-    const timer = setTimeout(() => {
-      if (!group) {
-        setPageState('error')
-        return
-      }
-      const members = guests.filter((g) => group.guestIds.includes(g.id))
-      if (members.length === 0) {
-        setPageState('empty')
-        return
-      }
-      setGroupGuests(members)
-      setPageState('ready')
-    }, 800)
-    return () => clearTimeout(timer)
-  }, [code, guests])
+    let cancelled = false
+
+    lookupInvite(code)
+      .then((invite) => {
+        if (cancelled) return
+        if (!invite) {
+          setPageState('error')
+          return
+        }
+        if (invite.guests.length === 0) {
+          setPageState('empty')
+          return
+        }
+        setGroupGuests(invite.guests)
+        setPageState('ready')
+      })
+      .catch(() => {
+        if (!cancelled) setPageState('error')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [code])
 
   const allConfirmed = groupGuests.length > 0 && groupGuests.every((g) => g.confirmed)
   const allSelected = groupGuests.length > 0 && groupGuests.every((g) => selected.has(g.id))
@@ -128,8 +135,13 @@ export default function Confirmar({ code, guests, onConfirm, onBack }: Confirmar
 
   const handleConfirmSave = async () => {
     setPageState('saving')
-    await new Promise((r) => setTimeout(r, 1000))
-    onConfirm(Array.from(selected))
+    setModalError('')
+    try {
+      await onConfirm(Array.from(selected))
+    } catch {
+      setModalError('Não foi possível confirmar. Tente novamente.')
+      setPageState('modal')
+    }
   }
 
   const selectedGuests = groupGuests.filter((g) => selected.has(g.id))
@@ -223,7 +235,7 @@ export default function Confirmar({ code, guests, onConfirm, onBack }: Confirmar
           <>
             {allConfirmed && (
               <div
-                className="flex items-center gap-2 px-4 py-3 rounded-[12px] mb-1"
+                className="flex items-center gap-2 px-4 py-3 rounded-3 mb-1"
                 style={{ backgroundColor: '#EAF0E6' }}
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -310,7 +322,7 @@ export default function Confirmar({ code, guests, onConfirm, onBack }: Confirmar
           onClick={(e) => { if (e.target === e.currentTarget && pageState !== 'saving') setPageState('ready') }}
         >
           <div
-            className="bg-surface w-full max-w-[480px] rounded-t-[24px] sm:rounded-[24px] p-8 flex flex-col gap-6"
+            className="bg-surface w-full max-w-120 rounded-t-6 sm:rounded-6 p-8 flex flex-col gap-6"
             style={{ boxShadow: '0 20px 60px rgba(22,34,62,0.18)' }}
           >
             <div>
@@ -344,7 +356,7 @@ export default function Confirmar({ code, guests, onConfirm, onBack }: Confirmar
             </p>
 
             {modalError && (
-              <div className="flex items-start gap-2 px-3 py-2.5 rounded-[8px]" style={{ backgroundColor: '#F5E9E7' }}>
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-2" style={{ backgroundColor: '#F5E9E7' }}>
                 <p className="text-sm" style={{ color: '#B5564A', fontFamily: 'Jost, sans-serif' }}>
                   {modalError}
                 </p>
@@ -363,7 +375,7 @@ export default function Confirmar({ code, guests, onConfirm, onBack }: Confirmar
               <button
                 onClick={handleConfirmSave}
                 disabled={pageState === 'saving'}
-                className="flex-[2] h-12 rounded-[10px] text-surface font-semibold text-[15px] flex items-center justify-center gap-2 transition-all disabled:opacity-70"
+                className="flex-2 h-12 rounded-2 text-surface font-semibold text-[15px] flex items-center justify-center gap-2 transition-all disabled:opacity-70"
                 style={{ backgroundColor: '#16223E', fontFamily: 'Jost, sans-serif' }}
                 onMouseEnter={(e) => { if (pageState !== 'saving') e.currentTarget.style.backgroundColor = '#1F3159' }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#16223E' }}
