@@ -10,14 +10,11 @@ interface ConfirmarProps {
 
 type PageState = 'loading' | 'ready' | 'error' | 'empty' | 'modal' | 'saving'
 
-function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+function Checkbox({ checked }: { checked: boolean }) {
   return (
-    <button
-      type="button"
-      onClick={onChange}
-      aria-checked={checked}
-      role="checkbox"
-      className="shrink-0 w-5.5 h-5.5 rounded-1.5 border flex items-center justify-center transition-all duration-150"
+    <span
+      aria-hidden="true"
+      className="shrink-0 w-5.5 h-5.5 rounded-1.5 border flex items-center justify-center transition-all duration-150 pointer-events-none"
       style={{
         borderColor: checked ? '#16223E' : '#E4DFD5',
         backgroundColor: checked ? '#16223E' : 'transparent',
@@ -35,7 +32,7 @@ function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => voi
           />
         </svg>
       )}
-    </button>
+    </span>
   )
 }
 
@@ -266,13 +263,11 @@ export default function Confirmar({ code, onConfirm, onBack }: ConfirmarProps) {
                 key={guest.id}
                 type="button"
                 onClick={() => toggleGuest(guest.id)}
+                aria-pressed={selected.has(guest.id)}
                 className="w-full bg-surface border border-line rounded-[20px] p-5 flex items-center gap-4 text-left transition-all duration-150 hover:border-champagne"
                 style={{ boxShadow: '0 4px 20px rgba(22,34,62,0.06)' }}
               >
-                <Checkbox
-                  checked={selected.has(guest.id)}
-                  onChange={() => toggleGuest(guest.id)}
-                />
+                <Checkbox checked={selected.has(guest.id)} />
                 <div className="flex-1 min-w-0">
                   <p className="text-ink font-semibold text-[17px] leading-snug mb-1.5" style={{ fontFamily: 'Jost, sans-serif' }}>
                     {guest.name}
