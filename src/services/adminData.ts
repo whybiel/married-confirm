@@ -154,6 +154,14 @@ export async function deleteGuest(id: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
+export async function deleteGroup(groupId: string): Promise<void> {
+  const { error: deleteGuestsError } = await supabase.from('guests').delete().eq('group_id', groupId)
+  if (deleteGuestsError) throw new Error(deleteGuestsError.message)
+
+  const { error: deleteGroupError } = await supabase.from('groups').delete().eq('id', groupId)
+  if (deleteGroupError) throw new Error(deleteGroupError.message)
+}
+
 export async function replaceFromImport(rows: ImportRow[]): Promise<AdminLists> {
   const validRows = rows.filter((row) => !row.error)
   const builtGroups = buildGroupsFromImport(validRows)

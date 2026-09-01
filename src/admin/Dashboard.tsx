@@ -1,17 +1,19 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { Guest, GroupDef, formatLastAccess } from '@/data/mock'
 import { parseGuestSpreadsheet, type ImportRow } from '@/services/importGuests'
 import { compareNaturally } from '@/utils/compareNaturally'
-import { copyInviteLink } from '@/utils/inviteLink'
+import { copyInviteMessage } from '@/utils/inviteLink'
 import type { GuestWrite } from '@/services/adminData'
 
 interface DashboardProps {
   guests: Guest[]
   groups: GroupDef[]
   loading?: boolean
+  initialGroupFilter?: string
   onSaveGuest: (data: GuestWrite, id?: string) => Promise<void>
   onDeleteGuest: (id: string) => Promise<void>
   onImport: (rows: ImportRow[]) => Promise<void>
+  onRefresh: () => Promise<void>
   onNavigateGroups: () => void
   onLogout: () => void
 }
@@ -60,11 +62,13 @@ function DeliveredChip({ delivered }: { delivered: boolean }) {
 }
 
 function CopyInviteLinkButton({
+  guestName,
   code,
   copied,
   onCopied,
   label,
 }: {
+  guestName: string
   code?: string
   copied: boolean
   onCopied: () => void
@@ -75,7 +79,7 @@ function CopyInviteLinkButton({
   const handleCopy = async () => {
     if (!code) return
     try {
-      await copyInviteLink(code)
+      await copyInviteMessage(guestName, code)
       setCopyError(false)
       onCopied()
     } catch {
@@ -88,7 +92,7 @@ function CopyInviteLinkButton({
       type="button"
       onClick={handleCopy}
       disabled={!code}
-      title={!code ? 'Sem código de convite' : copyError ? 'Não foi possível copiar' : copied ? 'Link copiado!' : 'Copiar link do convite'}
+      title={!code ? 'Sem código de convite' : copyError ? 'Não foi possível copiar' : copied ? 'Mensagem copiada!' : 'Copiar mensagem de convite'}
       className="h-8 px-2 rounded-2.5 flex items-center justify-center gap-1.5 hover:bg-surface-alt transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
     >
       {copied ? (
@@ -103,7 +107,7 @@ function CopyInviteLinkButton({
       )}
       {label && (
         <span className="text-xs font-medium whitespace-nowrap" style={{ fontFamily: 'Jost, sans-serif', color: copied ? '#6F8F6B' : '#5B6B85' }}>
-          {copied ? 'Link copiado' : label}
+          {copied ? 'Mensagem copiada' : label}
         </span>
       )}
     </button>
@@ -617,9 +621,9 @@ function ImportModal({ onClose, onComplete }: { onClose: () => void; onComplete:
   )
 }
 
-export default function Dashboard({ guests, groups, loading, onSaveGuest, onDeleteGuest, onImport, onNavigateGroups, onLogout }: DashboardProps) {
+export default function Dashboard({ guests, groups, loading, initialGroupFilter, onSaveGuest, onDeleteGuest, onImport, onRefresh, onNavigateGroups, onLogout }: DashboardProps) {
   const [search, setSearch] = useState('')
-  const [filterGroup, setFilterGroup] = useState('all')
+  const [filterGroup, setFilterGroup] = useState(initialGroupFilter ?? 'all')
   const [filterDelivered, setFilterDelivered] = useState<FilterDelivered>('all')
   const [filterConfirmed, setFilterConfirmed] = useState<FilterConfirmed>('all')
   const [sortKey, setSortKey] = useState<SortKey>('name')
@@ -628,7 +632,22 @@ export default function Dashboard({ guests, groups, loading, onSaveGuest, onDele
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [copiedGuestId, setCopiedGuestId] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    setFilterGroup(initialGroupFilter ?? 'all')
+  }, [initialGroupFilter])
+
+  const handleRefresh = async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      await onRefresh()
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const groupNames = Array.from(new Set(guests.map((g) => g.group).filter(Boolean))).sort(compareNaturally)
 
@@ -750,6 +769,35 @@ export default function Dashboard({ guests, groups, loading, onSaveGuest, onDele
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+              title="Atualizar lista"
+              className="h-10 w-10 rounded-2.5 border border-line text-muted hover:text-ink hover:bg-surface-alt transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                className={refreshing ? 'animate-spin' : ''}
+              >
+                <path
+                  d="M13.5 8A5.5 5.5 0 1 1 8 2.5"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M13.5 2.5V6h-3.5"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
             <button
               onClick={() => setShowImport(true)}
               className="h-10 px-5 rounded-2.5 border border-navy text-navy text-sm font-semibold hover:bg-navy hover:text-surface transition-all"
@@ -888,6 +936,7 @@ export default function Dashboard({ guests, groups, loading, onSaveGuest, onDele
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1">
                         <CopyInviteLinkButton
+                          guestName={guest.name}
                           code={groupCodeByGuestId.get(guest.id)}
                           copied={copiedGuestId === guest.id}
                           onCopied={() => handleCopiedInviteLink(guest.id)}
@@ -939,10 +988,11 @@ export default function Dashboard({ guests, groups, loading, onSaveGuest, onDele
                   </div>
                   <div className="flex items-center gap-1.5">
                     <CopyInviteLinkButton
+                      guestName={guest.name}
                       code={groupCodeByGuestId.get(guest.id)}
                       copied={copiedGuestId === guest.id}
                       onCopied={() => handleCopiedInviteLink(guest.id)}
-                      label="Copiar link"
+                      label="Copiar mensagem"
                     />
                     <button onClick={() => setEditGuest(guest)} className="w-8 h-8 rounded-2.5 flex items-center justify-center hover:bg-surface-alt transition-colors">
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">

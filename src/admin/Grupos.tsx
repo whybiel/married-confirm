@@ -1,14 +1,25 @@
+import { useState } from 'react'
 import { Guest, GroupDef, formatLastAccess } from '@/data/mock'
 import { compareNaturally } from '@/utils/compareNaturally'
 
 interface GruposProps {
   guests: Guest[]
   groups: GroupDef[]
-  onNavigateDashboard: () => void
+  onDeleteGroup: (groupId: string) => Promise<void>
+  onNavigateDashboard: (groupName?: string) => void
   onLogout: () => void
 }
 
-export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }: GruposProps) {
+interface DeleteTarget {
+  id: string
+  name: string
+  members: number
+}
+
+export default function Grupos({ guests, groups, onDeleteGroup, onNavigateDashboard, onLogout }: GruposProps) {
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
   const groupStats = groups
     .map((g) => {
       const members = guests.filter((guest) => g.guestIds.includes(guest.id))
@@ -19,6 +30,17 @@ export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }
       return { ...g, members: members.length, confirmed, pending, lastAccess }
     })
     .sort((a, b) => compareNaturally(a.name, b.name))
+
+  const handleDelete = async () => {
+    if (!deleteTarget || deleting) return
+    setDeleting(true)
+    try {
+      await onDeleteGroup(deleteTarget.id)
+      setDeleteTarget(null)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-surface-alt flex flex-col">
@@ -36,7 +58,7 @@ export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }
             </div>
             <nav className="hidden sm:flex items-center gap-1">
               <button
-                onClick={onNavigateDashboard}
+                onClick={() => onNavigateDashboard()}
                 className="h-8 px-4 rounded-2 text-sm font-medium text-muted hover:text-ink hover:bg-surface-alt transition-colors"
                 style={{ fontFamily: 'Jost, sans-serif' }}
               >
@@ -77,7 +99,7 @@ export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }
           {groupStats.map((g) => (
             <div
               key={g.id}
-              className="bg-surface rounded-5 border border-line p-6 flex flex-col gap-4 transition-all duration-150 hover:border-champagne"
+              className="group/card bg-surface rounded-5 border border-line p-6 flex flex-col gap-4 transition-all duration-150 hover:border-champagne"
               style={{ boxShadow: '0 4px 20px rgba(22,34,62,0.05)' }}
             >
               {/* Header */}
@@ -91,16 +113,28 @@ export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }
                     <span className="font-mono font-medium text-navy">{g.code}</span>
                   </p>
                 </div>
-                <div
-                  className="w-10 h-10 rounded-2.5 flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: '#F3EEE5' }}
-                >
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget({ id: g.id, name: g.name, members: g.members })}
+                    title="Excluir grupo"
+                    className="w-8 h-8 rounded-2.5 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity hover:bg-terra-light"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M2 4h10M5 4V3h4v1M5.5 6.5v4M8.5 6.5v4M3 4l1 8h6l1-8" stroke="#B5564A" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                  <div
+                    className="w-10 h-10 rounded-2.5 flex items-center justify-center"
+                    style={{ backgroundColor: '#F3EEE5' }}
+                  >
                   <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
                     <circle cx="7" cy="6" r="3" stroke="#5B6B85" strokeWidth="1.3" />
                     <circle cx="13" cy="8" r="2" stroke="#5B6B85" strokeWidth="1.3" />
                     <path d="M1 15c0-3 2.7-5 6-5s6 2 6 5" stroke="#5B6B85" strokeWidth="1.3" strokeLinecap="round" />
                     <path d="M13 11c2 0 4 1.5 4 4" stroke="#5B6B85" strokeWidth="1.3" strokeLinecap="round" />
                   </svg>
+                  </div>
                 </div>
               </div>
 
@@ -164,7 +198,7 @@ export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }
                   Último acesso: {g.lastAccess ? formatLastAccess(g.lastAccess) : 'nunca'}
                 </p>
                 <button
-                  onClick={onNavigateDashboard}
+                  onClick={() => onNavigateDashboard(g.name)}
                   className="text-xs font-semibold text-navy hover:underline underline-offset-2"
                   style={{ fontFamily: 'Jost, sans-serif' }}
                 >
@@ -186,6 +220,51 @@ export default function Grupos({ guests, groups, onNavigateDashboard, onLogout }
           </div>
         )}
       </main>
+
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 flex items-center justify-center p-4 z-50"
+          style={{ backgroundColor: 'rgba(22,34,62,0.4)' }}
+          onClick={(e) => { if (e.target === e.currentTarget && !deleting) setDeleteTarget(null) }}
+        >
+          <div
+            className="bg-surface rounded-6 p-8 w-full max-w-sm flex flex-col gap-5"
+            style={{ boxShadow: '0 20px 60px rgba(22,34,62,0.18)' }}
+          >
+            <div>
+              <h3 style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 22, fontWeight: 500, color: '#16223E' }}>
+                Remover grupo?
+              </h3>
+              <p className="text-muted text-sm mt-2" style={{ fontFamily: 'Jost, sans-serif' }}>
+                O grupo <strong className="text-ink">{deleteTarget.name}</strong>
+                {deleteTarget.members > 0
+                  ? ` e seus ${deleteTarget.members} ${deleteTarget.members === 1 ? 'convidado' : 'convidados'} serão removidos permanentemente.`
+                  : ' será removido permanentemente.'}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="flex-1 h-11 rounded-2.5 text-slate font-semibold text-[15px] disabled:opacity-50"
+                style={{ fontFamily: 'Jost, sans-serif' }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 h-11 rounded-2.5 text-surface font-semibold text-[15px] disabled:opacity-50"
+                style={{ backgroundColor: '#B5564A', fontFamily: 'Jost, sans-serif' }}
+              >
+                {deleting ? 'Removendo…' : 'Remover'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

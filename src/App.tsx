@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Guest, GroupDef } from '@/data/mock'
 import { type ImportRow } from '@/services/importGuests'
-import { deleteGuest, fetchAdminLists, replaceFromImport, saveGuest, signOutAdmin, type GuestWrite } from '@/services/adminData'
+import { deleteGuest, deleteGroup, fetchAdminLists, replaceFromImport, saveGuest, signOutAdmin, type GuestWrite } from '@/services/adminData'
 import { confirmPresence } from '@/services/invite'
 import { supabase } from '@/lib/supabase'
 import Landing from '@/guest/Landing'
@@ -21,8 +21,14 @@ export default function App() {
   const [guests, setGuests] = useState<Guest[]>([])
   const [groups, setGroups] = useState<GroupDef[]>([])
   const [listsReady, setListsReady] = useState(false)
+  const [dashboardGroupFilter, setDashboardGroupFilter] = useState<string>('all')
 
   const navigate = (s: Screen) => setScreen(s)
+
+  const handleNavigateDashboard = (groupName?: string) => {
+    setDashboardGroupFilter(groupName ?? 'all')
+    navigate('admin-dashboard')
+  }
 
   const refreshAdminLists = async () => {
     const data = await fetchAdminLists()
@@ -68,6 +74,11 @@ export default function App() {
 
   const handleDeleteGuest = async (id: string) => {
     await deleteGuest(id)
+    await refreshAdminLists()
+  }
+
+  const handleDeleteGroup = async (groupId: string) => {
+    await deleteGroup(groupId)
     await refreshAdminLists()
   }
 
@@ -137,9 +148,11 @@ export default function App() {
         guests={guests}
         groups={groups}
         loading={!listsReady}
+        initialGroupFilter={dashboardGroupFilter}
         onSaveGuest={handleSaveGuest}
         onDeleteGuest={handleDeleteGuest}
         onImport={handleImportGuests}
+        onRefresh={refreshAdminLists}
         onNavigateGroups={() => navigate('admin-grupos')}
         onLogout={handleLogout}
       />
@@ -151,7 +164,8 @@ export default function App() {
       <Grupos
         guests={guests}
         groups={groups}
-        onNavigateDashboard={() => navigate('admin-dashboard')}
+        onDeleteGroup={handleDeleteGroup}
+        onNavigateDashboard={handleNavigateDashboard}
         onLogout={handleLogout}
       />
     )
