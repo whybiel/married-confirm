@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Guest, GroupDef, formatLastAccess } from '@/data/mock'
+import { exportGuestList } from '@/services/exportGuests'
 import { parseGuestSpreadsheet, type ImportRow } from '@/services/importGuests'
 import { compareNaturally } from '@/utils/compareNaturally'
 import { copyInviteMessage } from '@/utils/inviteLink'
@@ -797,6 +798,15 @@ export default function Dashboard({ guests, groups, loading, initialGroupFilter,
                   strokeLinejoin="round"
                 />
               </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => exportGuestList(guests)}
+              disabled={loading || guests.length === 0}
+              className="cursor-pointer hover:border-navy h-10 px-5 rounded-2.5 border border-line text-ink text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ fontFamily: 'Jost, sans-serif' }}
+            >
+              Exportar
             </button>
             <button
               onClick={() => setShowImport(true)}
